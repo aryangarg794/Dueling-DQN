@@ -7,8 +7,21 @@ requires-python = ">=3.12"
 dependencies = [
     "pytest>=8.3.5",
     "typing>=3.10.0.0",
+    "ipykernel>=6.29.5",
+    "numpy>=2.2.5",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.3.5",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+
