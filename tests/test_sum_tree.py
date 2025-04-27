@@ -81,16 +81,16 @@ def test_get_leaf(simple_sumtree):
     total = tree.total
     assert np.isclose(total, 10.0)
     
-    idx, prio = tree._get(0.5)
+    _, prio = tree._get(0.5)
     assert prio == pytest.approx(1.0, abs=1e-6)
     
-    idx, prio = tree._get(2.5)
+    _, prio = tree._get(2.5)
     assert prio == pytest.approx(2.0, abs=1e-6)
     
-    idx, prio = tree._get(5.5)
+    _, prio = tree._get(5.5)
     assert prio == pytest.approx(3.0, abs=1e-6)
     
-    idx, prio = tree._get(9.0)
+    _, prio = tree._get(9.0)
     assert prio == pytest.approx(4.0, abs=1e-6)
 
 def test_sample(simple_sumtree):

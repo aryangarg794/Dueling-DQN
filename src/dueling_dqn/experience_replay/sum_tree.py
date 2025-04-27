@@ -42,7 +42,6 @@ class SumTree:
         """
         assert len(td_errors) <= self.size
         
-        # add new sample 
         if not isinstance(td_errors, np.ndarray):
             td_errors = np.array(td_errors)
         
