@@ -40,13 +40,26 @@ def test_update_single():
 
 def test_update_multiple():
     tree = SumTree(size=4)
-    tree.add([1.0, 1.0, 1.0, 1.0])
+    tree.add([1.0, 1.0, 1.0])
     
-    indices = [0, 1, 2]
+    indices = [0, 1, 3]
     new_td_errors = [5.0, 6.0, 7.0]
     tree.update(indices, new_td_errors)
     
     expected_total = 5.0 + 6.0 + 7.0 + 1.0
+    assert tree.pointer == 3 
+    assert np.isclose(tree.total, expected_total, atol=1e-6)
+    
+def test_update_full():
+    tree = SumTree(size=4)
+    tree.add([1.0, 1.0, 1.0, 1.0])
+    
+    indices = [0, 1, 2, 3]
+    new_td_errors = [5.0, 6.0, 7.0, 9.0]
+    tree.update(indices, new_td_errors)
+    
+    expected_total = 5.0 + 6.0 + 7.0 + 9.0
+    assert tree.pointer == 0 
     assert np.isclose(tree.total, expected_total, atol=1e-6)
     
 def test_add_fail():
@@ -97,7 +110,22 @@ def test_sample(simple_sumtree):
     tree = simple_sumtree
     batch_size = 3
     
-    tree.n_samples = 4  
+    indices, priorities = tree.sample(batch_size=batch_size)
+    
+    assert indices.shape == (batch_size,)
+    assert priorities.shape == (batch_size,)
+
+    assert np.all(indices >= 0)
+    assert np.all(indices <= tree.size)
+    
+    assert np.all(priorities > 0)
+
+
+def test_sample_large():
+    tree = SumTree(size=12)
+
+    tree.add(np.arange(12))
+    batch_size = 6
     
     indices, priorities = tree.sample(batch_size=batch_size)
     
@@ -105,8 +133,6 @@ def test_sample(simple_sumtree):
     assert priorities.shape == (batch_size,)
 
     assert np.all(indices >= 0)
-    assert np.all(indices >= tree.size)
+    assert np.all(indices <= tree.size)
     
     assert np.all(priorities > 0)
-
-

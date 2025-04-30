@@ -16,40 +16,40 @@ class SumTree:
         self.pointer = 0 
         self.n_samples = 0 
         
-    def update(self: Self, indices: List | np.ndarray | int, td_errors: List | np.ndarray | int) -> None: 
+    def update(self: Self, indices: List | np.ndarray | int, priorities: List | np.ndarray | int) -> None: 
         """Change existing tuples
         """
 
         if not isinstance(indices, np.ndarray):
             indices = np.array(indices)
-        if not isinstance(td_errors, np.ndarray):
-            td_errors = np.array(td_errors)
+        if not isinstance(priorities, np.ndarray):
+            priorities = np.array(priorities)
         
         indices = indices + self.size - 1
         for i, node in enumerate(indices): 
             parent = (node-1) // 2
-            change = td_errors[i] - self.tree[node]
+            change = priorities[i] - self.tree[node]
             
             while parent >= 0:
                 self.tree[parent] += change
                 parent = (parent - 1) // 2
                 
             
-            self.tree[node] = td_errors[i]    
+            self.tree[node] = priorities[i]    
 
-    def add(self: Self, td_errors: List | np.ndarray) -> None: 
+    def add(self: Self, priorities: List | np.ndarray) -> None: 
         """Add new tuple(s)
         """
-        assert len(td_errors) <= self.size
+        assert len(priorities) <= self.size
         
-        if not isinstance(td_errors, np.ndarray):
-            td_errors = np.array(td_errors)
+        if not isinstance(priorities, np.ndarray):
+            priorities = np.array(priorities)
         
-        idxs = ((np.arange(0, td_errors.shape[0]) + self.pointer) % self.size)
-        self.update(idxs, td_errors)  
+        idxs = ((np.arange(0, priorities.shape[0]) + self.pointer) % self.size)
+        self.update(idxs, priorities)  
         
-        self.pointer = (self.pointer + td_errors.shape[0]) % self.size
-        self.n_samples += td_errors.shape[0]
+        self.pointer = (self.pointer + priorities.shape[0]) % self.size
+        self.n_samples += priorities.shape[0]
         
     def sample(self: Self, batch_size: int) -> Tuple[np.ndarray[int], np.ndarray[float]]:
         """Sample based on priorities
@@ -84,7 +84,7 @@ class SumTree:
                 sum -= self.tree[left]
                 node = right
                 
-        return node, self.tree[node]
+        return node - (self.size - 1), self.tree[node]
         
         
     @property 
