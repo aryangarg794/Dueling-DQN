@@ -3,10 +3,12 @@ import numpy as np
 import gymnasium as gym 
 
 from abc import ABC, abstractmethod
+from sortedcontainers import SortedList
 from torch import Tensor
 from typing import Self, Tuple, List
 
 from dueling_dqn.experience_replay.sum_tree import SumTree
+from dueling_dqn.experience_replay.sorted_dict import ValueSortedDict
 
 class BufferBase(ABC):
     
@@ -36,7 +38,7 @@ class BufferBase(ABC):
         self.initial_beta = beta
         self.beta = beta
         self.stop_anneal = stop_anneal
-        self.max_td = -float('inf')
+        self.max_val = -float('inf')
         
     @abstractmethod
     def sample(
@@ -107,7 +109,7 @@ class ProportionalReplayBuffer(BufferBase):
     ) -> None: 
         self[self.pointer] = transition
         
-        self.tree.add([self.max_td])
+        self.tree.add([self.max_val])
         self.pointer = (self.pointer + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
     
@@ -116,8 +118,8 @@ class ProportionalReplayBuffer(BufferBase):
         transition_idxs: List, 
         td_errors: Tensor
     ) -> None: 
-        priorities = (td_errors.cpu().numpy() + self.epsilon) ** self.alpha
-        self.max_td = max(self.max_td, np.max(priorities))
+        priorities = (np.abs(td_errors.cpu().numpy()) + self.epsilon) ** self.alpha
+        self.max_val = max(self.max_val, np.max(priorities))
         self.tree.update(transition_idxs, priorities)
     
     def sample(
@@ -127,7 +129,7 @@ class ProportionalReplayBuffer(BufferBase):
         idxs, priorities = self.tree.sample(batch_size)
         with torch.no_grad():
             priorities = torch.as_tensor(priorities, dtype=torch.float32, device=self.device)
-            idxs = torch.as_tensor(idxs, dtype=torch.float32, device=self.device)
+            idxs = torch.as_tensor(idxs, dtype=torch.int64, device=self.device)
             
             weights = (self.size * priorities).pow(-self.beta)
             max_w = weights.amax()
@@ -154,22 +156,59 @@ class RankBasedReplayBuffer(BufferBase):
     ) -> None:
         super().__init__(**args, **kwargs)
         
+        self.ranks = ValueSortedDict()
+
         
     def add(
         self: Self, 
         transition 
     ) -> None: 
-        pass
+        self[self.pointer] = transition
+        self.ranks[self.pointer] = self.max_val
+        
+        self.pointer = (self.pointer + 1) % self.capacity
+        self.size = min(self.size + 1, self.capacity)
     
     def update(
         self: Self, 
         transition_idxs: List, 
         td_errors: Tensor
     ) -> None: 
-        pass
-    
+        for idx, error in zip(transition_idxs, td_errors):
+            self.ranks[idx] = np.abs(error)
+        self.max_val = max(self.max_val, np.max(td_errors))
+        
     def sample(
         self: Self,
         batch_size: int
     ) -> Tuple: 
-        pass
+        n_segments = self.size // batch_size
+        intervals = [n_segments * i for i in range(batch_size)] + [self.size-1]
+        sampled_values = np.random.randint(low=intervals[:-1], high=intervals[1:])
+        
+        priorities = []
+        idxs = []
+        for rank in sampled_values:
+            _, idx = self.ranks.get_by_rank(rank)
+            idxs.append(idx)
+            priorities.append(1/(rank+1))
+            
+        with torch.no_grad():
+            priorities = torch.as_tensor(np.array(priorities), dtype=torch.float32, device=self.device)
+            idxs = torch.as_tensor(np.array(idxs), dtype=torch.int64, device=self.device)
+            
+            weights = (self.size * priorities).pow(-self.beta)
+            max_w = weights.amax()
+            weights /= max_w
+            
+            states, actions, rewards, next_states, dones = self[idxs]
+            return (
+                states, 
+                actions, 
+                rewards, 
+                next_states, 
+                dones, 
+                weights, 
+                idxs
+            )
+                    

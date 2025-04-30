@@ -9,6 +9,9 @@ dependencies = [
     "typing>=3.10.0.0",
     "ipykernel>=6.29.5",
     "numpy>=2.2.5",
+    "sortedcontainers>=2.4.0",
+    "gymnasium[mujoco]>=1.1.1",
+    "ale-py>=0.11.0",
 ]
 
 [build-system]
