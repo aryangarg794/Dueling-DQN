@@ -12,6 +12,7 @@ dependencies = [
     "sortedcontainers>=2.4.0",
     "gymnasium[mujoco]>=1.1.1",
     "ale-py>=0.11.0",
+    "torch>=2.7.0",
 ]
 
 [build-system]
