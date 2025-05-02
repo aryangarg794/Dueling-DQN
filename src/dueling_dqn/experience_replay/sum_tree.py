@@ -34,7 +34,6 @@ class SumTree:
                 self.tree[parent] += change
                 parent = (parent - 1) // 2
                 
-            
             self.tree[node] = priorities[i]    
 
     def add(self: Self, priorities: List | np.ndarray) -> None: 
@@ -61,7 +60,7 @@ class SumTree:
         n_segments = p_total // batch_size
         intervals = [n_segments * i for i in range(batch_size)] + [p_total]
         sampled_values = np.random.uniform(low=intervals[:-1], high=intervals[1:])
-        
+
         indices = []
         priorities = []
         for sample in sampled_values:

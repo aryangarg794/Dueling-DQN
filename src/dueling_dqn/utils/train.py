@@ -1,10 +1,8 @@
 import gymnasium as gym
 import numpy as np 
 import matplotlib.pyplot as plt
-import torch 
 
 from tqdm import tqdm
-from typing import List, Tuple
 from gymnasium.wrappers.atari_preprocessing import AtariPreprocessing
 from gymnasium.wrappers import FrameStackObservation
 
@@ -33,7 +31,8 @@ def train(
         
         done = terminated or truncated
         transition = (obs, action, reward, obs_prime, done)
-        agent.buffer.add(transition)
+        td_error = agent.get_error(transition)
+        agent.buffer.add(transition, td_error)
         
         obs = obs_prime
         if done: 
@@ -50,7 +49,9 @@ def train(
         
         done = terminated or truncated
         transition = (obs, action, reward, obs_prime, done)
-        agent.buffer.add(transition)
+        
+        td_error = agent.get_error(transition)
+        agent.buffer.add(transition, td_error)
         
         obs = obs_prime
         if done:
@@ -58,19 +59,29 @@ def train(
             done = False
 
         # sample and update
-        batch = agent.buffer.sample(batch_size)
-        agent.update(batch)
-        agent.soft_update()
+        if len(agent.buffer) >= batch_size:
+            batch = agent.buffer.sample(batch_size)
+            td_errors, idxs = agent.update(batch)
+            agent.buffer.update(idxs, td_errors)
+            agent.soft_update()
+
         
         if step % val_freq == 0 or step == 1:
             val_reward = agent.evaluate(num_val_runs)
             metrics.update(val_reward)
-            print(f'Timestep: {step} | Average Val Reward: {metrics.get_average:.4f}', end='\r')
+        print(f'Timestep: {step} | Average Val Reward: {metrics.get_average:.4f}', end='\r')
         
     env.close()
     agent.val_env.close()
-        
-def plot_results(scores, timesteps, val_freq, game_name, save: bool = False):
+    return metrics
+    
+def plot_results(
+    scores: np.ndarray, 
+    timesteps: int, 
+    val_freq: int, 
+    game_name: str, 
+    save: bool = False
+) -> None:
     vars_low = []
     vars_high = []
     q=10

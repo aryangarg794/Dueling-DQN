@@ -5,16 +5,27 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+
     "pytest>=8.3.5",
+
     "typing>=3.10.0.0",
+
     "ipykernel>=6.29.5",
+
     "numpy>=2.2.5",
+
     "sortedcontainers>=2.4.0",
+
     "gymnasium[mujoco]>=1.1.1",
+
     "ale-py>=0.11.0",
+
     "torch>=2.7.0",
+
     "tqdm>=4.67.1",
+
     "matplotlib>=3.10.1",
+
     "stable-baselines3>=2.6.0",
 ]
 

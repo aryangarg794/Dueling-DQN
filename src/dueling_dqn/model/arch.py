@@ -82,7 +82,7 @@ class DuelingArch(nn.Module):
         self.value_stream = nn.Linear(out_dim, 1)
         self.advantage_stream = nn.Linear(out_dim, self.num_actions)
     
-    def forward(self, obs) -> Tensor:
+    def forward(self: Self, obs: Tensor) -> Tensor:
         representation = self.initial_extractor(obs)
         values = self.value_stream(representation)
         advantages = self.advantage_stream(representation)
@@ -118,6 +118,8 @@ class DuelingNetwork:
         gamma: float = 0.99,
         tau: float = 0.005, 
         device: str = 'cpu', 
+        max_norm: float = 10.0, 
+        stop_anneal: int = 1000, 
         *args, 
         **kwargs
     ) -> None:
@@ -127,27 +129,35 @@ class DuelingNetwork:
         self.target_net = deepcopy(self.net)
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=lr)
         
+        # freeze the target model 
+        for param in self.target_net.parameters():
+            param.requires_grad = False
+        
         match buffer_type:
             case 'rank': 
                 self.buffer = RankBasedReplayBuffer(
-                    capacity=buffer_size, observation_space=env.observation_space,
-                    action_space=env.action_space, device=self.device
+                    capacity=buffer_size, observation_space=env.observation_space, device=self.device, 
+                    stop_anneal=stop_anneal
                 )
             case 'prop':
                 self.buffer = ProportionalReplayBuffer(
-                    capacity=buffer_size, observation_space=env.observation_space,
-                    action_space=env.action_space, device=self.device
+                    capacity=buffer_size, observation_space=env.observation_space, device=self.device,
+                    stop_anneal=stop_anneal
                 )   
 
         self.val_env = deepcopy(env)
         self.gamma = gamma
         self.tau = tau
-        self.loss_func = nn.MSELoss()
+        self.max_norm = max_norm
+        
+    def loss_func(self: Self, preds: Tensor, true: Tensor, weights: Tensor) -> Tensor:
+        return torch.mean((preds - true).pow(2) * weights) 
     
     def epsilon_greedy(self: Self, obs: np.ndarray) -> np.ndarray: 
         return self.net.epsilon_greedy(obs)
     
-    def epsilon_decay(self: Self, step: int) -> None:
+    def decay(self: Self, step: int) -> None:
+        self.buffer.anneal_beta(step)
         self.net.epsilon_decay(step)
     
     def update(
@@ -159,23 +169,31 @@ class DuelingNetwork:
         # construct target values
         with torch.no_grad():
             online_actions = self.net(next_states).max(dim=-1, keepdim=True)[1]
-            bootstrapped_values = self.target_net(next_states).gather(dim=-1, index=online_actions, keepdim=True)
-            
+            bootstrapped_values = self.target_net(next_states).gather(dim=-1, index=online_actions)
+
             td_targets = rewards + self.gamma * bootstrapped_values * (1 - dones)
-            
-        q_values = self.net(states).gather(dim=-1, index=actions)
-        loss = weights * self.loss_func(q_values, td_targets.detach())
+        
+        q_values = self.net(states).gather(dim=-1, index=actions)    
+        loss = self.loss_func(q_values, td_targets.detach(), weights.view(*weights.shape, 1))
         
         self.optimizer.zero_grad()
         loss.backward()
         
         # scale the gradients 
-        with torch.no_grad():
-            for param in self.net.initial_extractor.parameters():
-                param.data *= 1/torch.sqrt(2)
+        # for param in self.net.initial_extractor.parameters():
+        #     param.data.grad *= 1/np.sqrt(2)
+                
+        nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=self.max_norm)
         self.optimizer.step()
         
-        return (td_targets - q_values, idxs)
+        return (td_targets - q_values).detach(), idxs
+    
+    def get_error(self: Self, transition: Tuple) -> float:
+        obs, action, reward, next_obs, done = transition 
+        with torch.no_grad():
+            q_values = self.net(torch.as_tensor(obs, dtype=torch.float32, device=self.device).view(1, *obs.shape)).squeeze()[action]
+            q_values_next = self.target_net(torch.as_tensor(next_obs, dtype=torch.float32, device=self.device).view(1, *obs.shape)).amax()
+        return reward + self.gamma * q_values_next * (1-done) - q_values 
     
     def soft_update(self: Self) -> None:
         with torch.no_grad():
@@ -194,8 +212,8 @@ class DuelingNetwork:
                 done = False
                 ep_reward = 0
                 while not done:
-                    action = self.net(torch.as_tensor(obs, dtype=torch.float32, device=self.device))
-                    obs, reward, terminated, truncated, _ = self.val_env.step(action.cpu().numpy())
+                    action = self.net(torch.as_tensor(obs, dtype=torch.float32, device=self.device).view(1, *obs.shape))
+                    obs, reward, terminated, truncated, _ = self.val_env.step(action.cpu().argmax().item())
                     ep_reward += reward
                     done = terminated or truncated
                 

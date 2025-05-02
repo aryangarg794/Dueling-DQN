@@ -1,10 +1,10 @@
 import argparse
 import ale_py
-import torch 
+import os
 import numpy as np
 import random
 import gymnasium as gym
-import matplotlib.pyplot as plt
+import torch 
 
 from dueling_dqn.model.arch import DuelingNetwork
 from dueling_dqn.utils.train import train, plot_results, make_env
@@ -17,8 +17,9 @@ parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2], help="Lis
 parser.add_argument("--env", type=str, default='CartPole-v1', help="Env to test on")
 parser.add_argument("--save", action="store_true", help="Save model or not")
 parser.add_argument("--steps", type=int, default=int(1e6), help="How long to run the experiment")
-parser.add_argument("--val", type=int, default=5000, help="When to evaluate")
+parser.add_argument("--val", type=int, default=250, help="When to evaluate")
 parser.add_argument("--pre", type=int, default=int(25e3), help="How much to preload")
+parser.add_argument("--decay_steps", type=int, default=int(8e5), help="When to stop decay")
 parser.add_argument("--lr", type=float, default=6.25e-5, help="Learning Rate")
 parser.add_argument("--atari", action="store_true", help="Atari game or not")
 parser.add_argument("--buffer", type=str, default='prop', help="Buffer type")
@@ -31,7 +32,8 @@ if __name__ == "__main__":
     results = []
     best_score = float('-inf')
     
-    print(f'================Running env: {args.env} for {args.steps} steps================')
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(f'================Running env: {args.env} for {args.steps} steps on device: {device}================')
     for seed in args.seeds:
         print(f'\n==============Running Seed {seed}================\n')
         
@@ -44,7 +46,8 @@ if __name__ == "__main__":
         env.action_space.seed(seed)
         
         agent = DuelingNetwork(
-            env, lr=args.lr, buffer_type=args.buffer, atari=args.atari
+            env, lr=args.lr, buffer_type=args.buffer, atari=args.atari, 
+            decay_steps=args.decay_steps, stop_anneal=args.decay_steps
         )
         
         metrics = train(
@@ -57,7 +60,7 @@ if __name__ == "__main__":
         # save the best model
         if metrics.get_average > best_score and args.save: 
             agent.save(args.env)
-            best_score = metrics.averages
+            best_score = metrics.get_average
             
     results = np.array(results)
     plot_results(results, args.steps, args.val, args.env, True)
