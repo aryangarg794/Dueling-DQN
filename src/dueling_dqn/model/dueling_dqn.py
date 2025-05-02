@@ -3,8 +3,11 @@ import numpy as np
 import torch 
 import torch.nn as nn 
 
+from copy import deepcopy
 from torch import Tensor
 from typing import Self, List, Tuple
+
+from dueling_dqn.experience_replay.per import RankBasedReplayBuffer, ProportionalReplayBuffer
 
 class FeatureExtractorAtari(nn.Module):
     
@@ -36,14 +39,13 @@ class FeatureExtractorAtari(nn.Module):
         return self.layers(x)
 
 
-class DuelingNet(nn.Module):
+class DuelingArch(nn.Module):
     
     def __init__(
         self: Self, 
         env: gym.Env, 
         hidden_layers_extractor: List = list([512, 256]), 
         out_dim: int = 64, 
-        gamma: float = 0.99, 
         start_epsilon: float = 0.99,
         max_decay: float = 0.1,
         decay_steps: int = 1000,
@@ -51,7 +53,7 @@ class DuelingNet(nn.Module):
         *args, 
         **kwargs
     ) -> None:
-        super(DuelingNet, self).__init__(*args, **kwargs)
+        super(DuelingArch, self).__init__(*args, **kwargs)
 
         self.env = env
         self.num_actions = env.action_space.n
@@ -59,7 +61,6 @@ class DuelingNet(nn.Module):
         self.epsilon = start_epsilon
         self.max_decay = max_decay
         self.decay_steps = decay_steps
-        self.gamma = gamma
         
         if atari: 
             self.initial_extractor = FeatureExtractorAtari(out_dim=out_dim, *args, *kwargs)
@@ -95,14 +96,105 @@ class DuelingNet(nn.Module):
             else:
                 q_values = self(obs)
                 action = torch.argmax(q_values, dim=dim)
-        return action.detach().cpu().numpy()
+            return action.detach().cpu().numpy()
 
     def epsilon_decay(self: Self, step: int) -> None:
         self.epsilon = self.max_decay + (self.start_epsilon
                                          - self.max_decay) * max(0, (self.decay_steps - step) / self.decay_steps)    
     
+ 
+class DuelingNetwork:
+    
+    def __init__(
+        self: Self, 
+        env: gym.Env, 
+        lr: float = 6.25e-5,
+        buffer_type: 'str' = 'rank', 
+        buffer_size: int = int(1e6),
+        gamma: float = 0.99,
+        tau: float = 0.005, 
+        device: str = 'cpu', 
+        *args, 
+        **kwargs
+    ) -> None:
+        self.device = device 
+        
+        self.net = DuelingArch(env=env, **kwargs).to(device=self.device)
+        self.target_net = deepcopy(self.net)
+        self.optimizer = torch.optim.Adam(self.net.parameters(), lr=lr)
+        
+        match buffer_type:
+            case 'rank': 
+                self.buffer = RankBasedReplayBuffer(
+                    capacity=buffer_size, observation_space=env.observation_space,
+                    action_space=env.action_space, device=self.device
+                )
+            case 'prop':
+                self.buffer = ProportionalReplayBuffer(
+                    capacity=buffer_size, observation_space=env.observation_space,
+                    action_space=env.action_space, device=self.device
+                )   
+
+        self.val_env = deepcopy(env)
+        self.gamma = gamma
+        self.tau = tau
+        self.loss_func = nn.MSELoss()
+    
+    def epsilon_greedy(self: Self, obs: Tensor) -> np.ndarray: 
+        return self.net.epsilon_greedy(obs)
+    
+    def epsilon_decay(self: Self, step: int) -> None:
+        self.net.epsilon_decay(step)
+    
     def update(
         self: Self, 
         batch: Tuple
-    ) -> float:
-        return 
+    ) -> Tuple:
+        states, actions, rewards, next_states, dones, weights, idxs = batch
+        
+        # construct target values
+        with torch.no_grad():
+            online_actions = self.net(next_states).max(dim=-1, keepdim=True)[1]
+            bootstrapped_values = self.target_net(next_states).gather(dim=-1, index=online_actions, keepdim=True)
+            
+            td_targets = rewards + self.gamma * bootstrapped_values * (1 - dones)
+            
+        q_values = self.net(states).gather(dim=-1, index=actions)
+        loss = weights * self.loss_func(q_values, td_targets.detach())
+        
+        self.optimizer.zero_grad()
+        loss.backward()
+        
+        # scale the gradients 
+        with torch.no_grad():
+            for param in self.net.initial_extractor.parameters():
+                param.data *= 1/torch.sqrt(2)
+        self.optimizer.step()
+        
+        return (td_targets - q_values, idxs)
+    
+    def soft_update(self: Self) -> None:
+        with torch.no_grad():
+            for param, target_param in zip(self.net.parameters(), self.target_net.parameters()):
+                target_param.data.copy_((1-self.tau) * target_param.data + self.tau * param.data)
+        
+    def hard_update(self: Self) -> None:
+        self.target_net.load_state_dict(self.net.state_dict())
+        
+    def evaluate(self: Self, num_evals: int = 10) -> float:
+        self.net.eval()
+        with torch.no_grad():
+            rewards = []
+            for _ in range(num_evals):
+                obs, _ = self.val_env.reset()
+                done = False
+                ep_reward = 0
+                while not done:
+                    action = self.net(torch.as_tensor(obs, dtype=torch.float32, device=self.device))
+                    obs, reward, terminated, truncated, _ = self.val_env.step(action.cpu().numpy())
+                    ep_reward += reward
+                    done = terminated or truncated
+                
+                rewards.append(ep_reward)
+        self.net.train()
+        return np.mean(rewards)
