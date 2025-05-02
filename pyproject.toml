@@ -13,6 +13,9 @@ dependencies = [
     "gymnasium[mujoco]>=1.1.1",
     "ale-py>=0.11.0",
     "torch>=2.7.0",
+    "tqdm>=4.67.1",
+    "matplotlib>=3.10.1",
+    "stable-baselines3>=2.6.0",
 ]
 
 [build-system]

@@ -79,11 +79,11 @@ class BufferBase(ABC):
         index: int | Tensor,
         values: Tuple
     ) -> None:
-        self.states[index] = values[0]
-        self.actions[index] = values[1]
-        self.rewards[index] = values[2]
-        self.next_states[index] = values[3]
-        self.dones[index] = values[4]
+        self.states[index] = torch.as_tensor(values[0], dtype=torch.float32, device=self.device)
+        self.actions[index] = torch.as_tensor(values[1], dtype=torch.float32, device=self.device)
+        self.rewards[index] = torch.as_tensor(values[2], dtype=torch.float32, device=self.device)
+        self.next_states[index] = torch.as_tensor(values[3], dtype=torch.float32, device=self.device)
+        self.dones[index] = torch.as_tensor(values[4], dtype=torch.float32, device=self.device)
         
     def anneal_beta(self: Self, step: int) -> None:
         if step >= self.stop_anneal:

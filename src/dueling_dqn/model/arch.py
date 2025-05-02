@@ -87,9 +87,10 @@ class DuelingArch(nn.Module):
         
         return values + (advantages - advantages.mean(dim=-1, keepdim=True))
     
-    def epsilon_greedy(self: Self, obs: Tensor, dim: int = -1) -> Tensor:
+    def epsilon_greedy(self: Self, obs: np.ndarray, dim: int = -1) -> Tensor:
         rng = np.random.random()
         with torch.no_grad():
+            obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
             if rng < self.epsilon:
                 action = self.env.action_space.sample()
                 action = torch.tensor(action)
@@ -140,7 +141,7 @@ class DuelingNetwork:
         self.tau = tau
         self.loss_func = nn.MSELoss()
     
-    def epsilon_greedy(self: Self, obs: Tensor) -> np.ndarray: 
+    def epsilon_greedy(self: Self, obs: np.ndarray) -> np.ndarray: 
         return self.net.epsilon_greedy(obs)
     
     def epsilon_decay(self: Self, step: int) -> None:
@@ -198,3 +199,21 @@ class DuelingNetwork:
                 rewards.append(ep_reward)
         self.net.train()
         return np.mean(rewards)
+    
+    def save(
+        self: Self,
+        game_name: str
+    ) -> None:
+        torch.save({
+            'state_dict' : self.net.state_dict(),
+        }, f'models/Dueling_{game_name}.pt')
+        
+    def load(
+        self, 
+        path: str
+    ) -> None:
+        saved_model = torch.load(path, weights_only=True)
+        self.net.load_state_dict(saved_model['state_dict'])
+   
+    def __repr__(self):
+        return f'Dueling Agent'
