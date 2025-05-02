@@ -192,6 +192,7 @@ class RankBasedReplayBuffer(BufferBase):
         error: float 
     ) -> None: 
         self[self.pointer] = transition
+        self.ranks[self.pointer] = error
         
         self.pointer = (self.pointer + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
@@ -202,6 +203,7 @@ class RankBasedReplayBuffer(BufferBase):
         td_errors: Tensor
     ) -> None: 
         for idx, error in zip(transition_idxs, td_errors):
+            idx, error = idx.item(), error.item()
             self.ranks[idx] = np.abs(error)
         
     def sample(

@@ -22,7 +22,7 @@ parser.add_argument("--pre", type=int, default=int(25e3), help="How much to prel
 parser.add_argument("--decay_steps", type=int, default=int(8e5), help="When to stop decay")
 parser.add_argument("--lr", type=float, default=6.25e-5, help="Learning Rate")
 parser.add_argument("--atari", action="store_true", help="Atari game or not")
-parser.add_argument("--buffer", type=str, default='prop', help="Buffer type")
+parser.add_argument("--buffer", type=str, default='rank', help="Buffer type")
 parser.add_argument("--batch_size", type=int, default=1024, help="Batch Size")
 
 args = parser.parse_args()
