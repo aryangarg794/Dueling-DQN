@@ -99,7 +99,7 @@ class ProportionalReplayBuffer(BufferBase):
         *args, 
         **kwargs
     ) -> None:
-        super().__init__(**args, **kwargs)
+        super().__init__(*args, **kwargs)
         
         self.tree = SumTree(self.capacity)
         
@@ -154,7 +154,7 @@ class RankBasedReplayBuffer(BufferBase):
         *args, 
         **kwargs
     ) -> None:
-        super().__init__(**args, **kwargs)
+        super().__init__(*args, **kwargs)
         
         self.ranks = ValueSortedDict()
 

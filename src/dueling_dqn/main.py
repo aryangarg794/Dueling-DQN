@@ -31,9 +31,9 @@ if __name__ == "__main__":
     results = []
     best_score = float('-inf')
     
-    print(f'Running env: {args.env} for {args.steps} steps')
+    print(f'================Running env: {args.env} for {args.steps} steps================')
     for seed in args.seeds:
-        print(f'\nRunning Seed {seed}\n')
+        print(f'\n==============Running Seed {seed}================\n')
         
         random.seed(seed)
         np.random.seed(seed)
@@ -44,7 +44,7 @@ if __name__ == "__main__":
         env.action_space.seed(seed)
         
         agent = DuelingNetwork(
-            env, lr=args.lr, buffer_type=args.buffer
+            env, lr=args.lr, buffer_type=args.buffer, atari=args.atari
         )
         
         metrics = train(

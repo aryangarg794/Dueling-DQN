@@ -50,6 +50,7 @@ class DuelingArch(nn.Module):
         max_decay: float = 0.1,
         decay_steps: int = 1000,
         atari: bool = False,
+        device: str = 'cpu',
         *args, 
         **kwargs
     ) -> None:
@@ -61,6 +62,7 @@ class DuelingArch(nn.Module):
         self.epsilon = start_epsilon
         self.max_decay = max_decay
         self.decay_steps = decay_steps
+        self.device = device
         
         if atari: 
             self.initial_extractor = FeatureExtractorAtari(out_dim=out_dim, *args, *kwargs)
@@ -72,7 +74,7 @@ class DuelingArch(nn.Module):
 
             hidden_layers_extractor.append(out_dim)
             for i in range(1, len(hidden_layers_extractor)):
-                self.layers.extend(
+                self.initial_extractor.extend(
                     [nn.Linear(hidden_layers_extractor[i-1], hidden_layers_extractor[i]), 
                     nn.ReLU()]
                 )
@@ -109,6 +111,7 @@ class DuelingNetwork:
     def __init__(
         self: Self, 
         env: gym.Env, 
+        atari: bool = False, 
         lr: float = 6.25e-5,
         buffer_type: 'str' = 'rank', 
         buffer_size: int = int(1e6),
@@ -120,7 +123,7 @@ class DuelingNetwork:
     ) -> None:
         self.device = device 
         
-        self.net = DuelingArch(env=env, **kwargs).to(device=self.device)
+        self.net = DuelingArch(env=env, atari=atari, device=device, **kwargs).to(device=self.device)
         self.target_net = deepcopy(self.net)
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=lr)
         
