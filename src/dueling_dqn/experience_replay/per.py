@@ -3,7 +3,6 @@ import numpy as np
 import gymnasium as gym 
 
 from abc import ABC, abstractmethod
-from sortedcontainers import SortedList
 from torch import Tensor
 from typing import Self, Tuple, List
 
@@ -88,9 +87,9 @@ class BufferBase(ABC):
     
     def anneal_beta(self: Self, step: int) -> None:
         if step >= self.stop_anneal:
-            return 1.0
+            self.beta = 1.0
         else: 
-            self.initial_beta + (1.0 - self.initial_beta) * (step / self.stop_anneal)
+            self.beta = self.initial_beta + (1.0 - self.initial_beta) * (step / self.stop_anneal)
 
 class BasicBuffer(BufferBase): 
     
@@ -118,6 +117,23 @@ class BasicBuffer(BufferBase):
     ) -> None: 
         pass
     
+    def sample(
+        self: Self,
+        batch_size: int
+    ) -> Tuple: 
+        idxs = torch.randint(low=0, high=self.size, device=self.device, size=(batch_size, ))
+        states, actions, rewards, next_states, dones = self[idxs]
+        return (
+            states, 
+            actions, 
+            rewards, 
+            next_states, 
+            dones, 
+            None, 
+            idxs
+        )
+        
+    
 class ProportionalReplayBuffer(BufferBase):
     
     def __init__(
@@ -128,6 +144,7 @@ class ProportionalReplayBuffer(BufferBase):
         super().__init__(*args, **kwargs)
         
         self.tree = SumTree(self.capacity)
+        self.max_val = 100
         
     def add(
         self: Self, 
@@ -136,7 +153,7 @@ class ProportionalReplayBuffer(BufferBase):
     ) -> None: 
         self[self.pointer] = transition
         
-        self.tree.add([error])
+        self.tree.add([self.max_val])
         self.pointer = (self.pointer + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
     
@@ -145,7 +162,8 @@ class ProportionalReplayBuffer(BufferBase):
         transition_idxs: List, 
         td_errors: Tensor
     ) -> None: 
-        priorities = (np.abs(td_errors.cpu().numpy()) + self.epsilon) ** self.alpha
+        priorities = (np.abs(td_errors) + self.epsilon) ** self.alpha
+        self.max_val = max(self.max_val, td_errors.max())
         self.tree.update(transition_idxs, priorities)
     
     def sample(
@@ -157,7 +175,7 @@ class ProportionalReplayBuffer(BufferBase):
         with torch.no_grad():
             priorities = torch.as_tensor(priorities, dtype=torch.float32, device=self.device) + self.epsilon
             idxs = torch.as_tensor(idxs, dtype=torch.int64, device=self.device)
-            
+            priorities /= self.tree.total
             
             weights = (self.size * priorities).pow(-self.beta)
             max_w = weights.amax()
@@ -184,7 +202,8 @@ class RankBasedReplayBuffer(BufferBase):
         super().__init__(*args, **kwargs)
         
         self.ranks = ValueSortedDict()
-
+        self.max_val = 1e5 # the value for ths doesnt affect the weight since we do p(i) = 1/rank(i)
+        self.priority_sum = 0 # since this only changes due to size
         
     def add(
         self: Self, 
@@ -192,10 +211,12 @@ class RankBasedReplayBuffer(BufferBase):
         error: float 
     ) -> None: 
         self[self.pointer] = transition
-        self.ranks[self.pointer] = error
+        self.ranks[self.pointer] = self.max_val
         
         self.pointer = (self.pointer + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
+        if self.size != self.capacity:
+            self.priority_sum += (1/self.size)**self.alpha
     
     def update(
         self: Self, 
@@ -204,6 +225,7 @@ class RankBasedReplayBuffer(BufferBase):
     ) -> None: 
         for idx, error in zip(transition_idxs, td_errors):
             idx, error = idx.item(), error.item()
+            self.max_val = max(self.max_val, error)
             self.ranks[idx] = np.abs(error)
         
     def sample(
@@ -219,12 +241,13 @@ class RankBasedReplayBuffer(BufferBase):
         for rank in sampled_values:
             _, idx = self.ranks.get_by_rank(rank)
             idxs.append(idx)
-            priorities.append(1/(rank+1))
+            priorities.append((1/(rank+1)) ** self.alpha)
             
         with torch.no_grad():
             priorities = torch.as_tensor(np.array(priorities), dtype=torch.float32, device=self.device) + self.epsilon
             idxs = torch.as_tensor(np.array(idxs), dtype=torch.int64, device=self.device)
             
+            priorities = priorities / self.priority_sum
             weights = (self.size * priorities).pow(-self.beta)
             max_w = weights.amax()
             weights /= max_w
@@ -239,4 +262,4 @@ class RankBasedReplayBuffer(BufferBase):
                 weights, 
                 idxs
             )
-                    
+            

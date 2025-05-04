@@ -59,7 +59,7 @@ class SumTree:
         p_total = self.total
         n_segments = p_total // batch_size
         intervals = [n_segments * i for i in range(batch_size)] + [p_total]
-        sampled_values = np.random.uniform(low=intervals[:-1], high=intervals[1:])
+        sampled_values = np.random.uniform(low=0, high=p_total, size=(batch_size,))
 
         indices = []
         priorities = []

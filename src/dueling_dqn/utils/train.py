@@ -16,8 +16,8 @@ def train(
     val_freq: int = 5000, 
     batch_size: int = 1024, 
     preload: int = 1000, 
-    window: int = 5, 
-    num_val_runs: int = 10,
+    window: int = 35, 
+    num_val_runs: int = 15,
     seed: int = 0
 ) -> RollingAverage: 
     
@@ -61,15 +61,17 @@ def train(
         # sample and update
         if len(agent.buffer) >= batch_size:
             batch = agent.buffer.sample(batch_size)
-            td_errors, idxs = agent.update(batch)
-            agent.buffer.update(idxs, td_errors)
+            td_errors, idxs, loss = agent.update(batch)
+            agent.buffer.update(idxs, td_errors.detach())
+            agent.decay(step)
             agent.soft_update()
+            
 
         
         if step % val_freq == 0 or step == 1:
             val_reward = agent.evaluate(num_val_runs)
             metrics.update(val_reward)
-        print(f'Timestep: {step} | Average Val Reward: {metrics.get_average:.4f}', end='\r')
+            print(f'Timestep: {step} | Average Val Reward: {metrics.get_average:.4f} | Loss: {loss:.4f} | Epsilon: {agent.net.epsilon:.4f} | Beta: {agent.buffer.beta:.4f}', end='\r')
         
     env.close()
     agent.val_env.close()
@@ -80,6 +82,7 @@ def plot_results(
     timesteps: int, 
     val_freq: int, 
     game_name: str, 
+    buffer_type: str, 
     save: bool = False
 ) -> None:
     vars_low = []
@@ -101,11 +104,11 @@ def plot_results(
     plt.fill_between(xs, vars_low, vars_high, alpha=0.2, color=color)
     plt.legend()
     plt.grid(True)
-    plt.title(f'{game_name} Dueling DQN + PER Results')
+    plt.title(f'{game_name} Dueling DQN + PER Results ({buffer_type.capitalize()})')
     plt.ylabel('Cumm. Reward')
     plt.xlabel('Timestep')
     if save:
-        plt.savefig(f'lcs/dueling_dqn_{game_name}')
+        plt.savefig(f'lcs/dueling_dqn_{game_name}_{buffer_type}')
         
 def make_env(game_name: str, atari: bool) -> gym.Env:
     env = gym.make(game_name)

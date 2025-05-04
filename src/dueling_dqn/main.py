@@ -5,6 +5,8 @@ import numpy as np
 import random
 import gymnasium as gym
 import torch 
+import dill
+
 
 from dueling_dqn.model.arch import DuelingNetwork
 from dueling_dqn.utils.train import train, plot_results, make_env
@@ -13,17 +15,18 @@ gym.register_envs(ale_py)
 
 parser = argparse.ArgumentParser(description="Dueling DQN Experiment Runner")
 
-parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2], help="List of random seeds for running multiple experiments")
+parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1], help="List of random seeds for running multiple experiments")
 parser.add_argument("--env", type=str, default='CartPole-v1', help="Env to test on")
 parser.add_argument("--save", action="store_true", help="Save model or not")
-parser.add_argument("--steps", type=int, default=int(1e6), help="How long to run the experiment")
-parser.add_argument("--val", type=int, default=250, help="When to evaluate")
+parser.add_argument("--steps", type=int, default=int(3e6), help="How long to run the experiment")
+parser.add_argument("--val", type=int, default=10000, help="When to evaluate")
 parser.add_argument("--pre", type=int, default=int(25e3), help="How much to preload")
-parser.add_argument("--decay_steps", type=int, default=int(8e5), help="When to stop decay")
-parser.add_argument("--lr", type=float, default=6.25e-5, help="Learning Rate")
+parser.add_argument("--decay_steps", type=int, default=int(5e5), help="When to stop decay")
+parser.add_argument("--lr", type=float, default=1e-3, help="Learning Rate")
 parser.add_argument("--atari", action="store_true", help="Atari game or not")
 parser.add_argument("--buffer", type=str, default='rank', help="Buffer type")
-parser.add_argument("--batch_size", type=int, default=1024, help="Batch Size")
+parser.add_argument("--buffer_size", type=int, default=int(1e5), help="Buffer Size")
+parser.add_argument("--batch_size", type=int, default=256, help="Batch Size")
 
 args = parser.parse_args()
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -33,7 +36,7 @@ if __name__ == "__main__":
     best_score = float('-inf')
     
     os.system('cls' if os.name == 'nt' else 'clear')
-    print(f'================Running env: {args.env} for {args.steps} steps on device: {device}================')
+    print(f'================Running env: {args.env} for {args.steps} steps on device: {device} for buffer {args.buffer}================')
     for seed in args.seeds:
         print(f'\n==============Running Seed {seed}================\n')
         
@@ -47,13 +50,18 @@ if __name__ == "__main__":
         
         agent = DuelingNetwork(
             env, lr=args.lr, buffer_type=args.buffer, atari=args.atari, 
-            decay_steps=args.decay_steps, stop_anneal=args.decay_steps
+            decay_steps=args.decay_steps, stop_anneal=args.decay_steps,
+            buffer_size=args.buffer_size
         )
         
-        metrics = train(
-            env, agent, args.steps, args.val, args.batch_size,
-            args.pre, seed=seed
-        )
+        try:
+            metrics = train(
+                env, agent, args.steps, args.val, args.batch_size,
+                args.pre, seed=seed
+            )
+        except KeyboardInterrupt:
+            env.close()
+            agent.val_env.close()
         
         results.append(metrics.averages)
         
@@ -63,4 +71,6 @@ if __name__ == "__main__":
             best_score = metrics.get_average
             
     results = np.array(results)
-    plot_results(results, args.steps, args.val, args.env, True)
+    plot_results(results, args.steps, args.val, args.env, args.buffer, True)
+    with open(f'lcs/results_{args.env}_{args.buffer}.pl', 'wb') as file: 
+        dill.dump(results, file)
