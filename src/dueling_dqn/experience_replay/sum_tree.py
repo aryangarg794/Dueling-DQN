@@ -29,12 +29,11 @@ class SumTree:
         for i, node in enumerate(indices): 
             parent = (node-1) // 2
             change = priorities[i] - self.tree[node]
+            self.tree[node] = priorities[i]
             
             while parent >= 0:
                 self.tree[parent] += change
-                parent = (parent - 1) // 2
-                
-            self.tree[node] = priorities[i]    
+                parent = (parent - 1) // 2    
 
     def add(self: Self, priorities: List | np.ndarray) -> None: 
         """Add new tuple(s)

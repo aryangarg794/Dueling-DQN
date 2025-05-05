@@ -15,18 +15,18 @@ gym.register_envs(ale_py)
 
 parser = argparse.ArgumentParser(description="Dueling DQN Experiment Runner")
 
-parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1], help="List of random seeds for running multiple experiments")
+parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4], help="List of random seeds for running multiple experiments")
 parser.add_argument("--env", type=str, default='CartPole-v1', help="Env to test on")
 parser.add_argument("--save", action="store_true", help="Save model or not")
-parser.add_argument("--steps", type=int, default=int(3e6), help="How long to run the experiment")
-parser.add_argument("--val", type=int, default=10000, help="When to evaluate")
+parser.add_argument("--steps", type=int, default=int(1e6), help="How long to run the experiment")
+parser.add_argument("--val", type=int, default=250, help="When to evaluate")
 parser.add_argument("--pre", type=int, default=int(25e3), help="How much to preload")
-parser.add_argument("--decay_steps", type=int, default=int(5e5), help="When to stop decay")
-parser.add_argument("--lr", type=float, default=1e-3, help="Learning Rate")
+parser.add_argument("--decay_steps", type=int, default=int(1e5), help="When to stop decay")
+parser.add_argument("--lr", type=float, default=1e-4, help="Learning Rate")
 parser.add_argument("--atari", action="store_true", help="Atari game or not")
 parser.add_argument("--buffer", type=str, default='rank', help="Buffer type")
 parser.add_argument("--buffer_size", type=int, default=int(1e5), help="Buffer Size")
-parser.add_argument("--batch_size", type=int, default=256, help="Batch Size")
+parser.add_argument("--batch_size", type=int, default=512, help="Batch Size")
 
 args = parser.parse_args()
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -50,7 +50,7 @@ if __name__ == "__main__":
         
         agent = DuelingNetwork(
             env, lr=args.lr, buffer_type=args.buffer, atari=args.atari, 
-            decay_steps=args.decay_steps, stop_anneal=args.decay_steps,
+            decay_steps=args.decay_steps, stop_anneal=args.steps-100000,
             buffer_size=args.buffer_size
         )
         

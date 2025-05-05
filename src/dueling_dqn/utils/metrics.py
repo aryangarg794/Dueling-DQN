@@ -11,6 +11,10 @@ class RollingAverage:
         
         self.window = deque(maxlen=window_size)
         self.averages = []
+        self.num_eps = 0 
+        
+    def increment_ep(self: Self) -> None:
+        self.num_eps += 1
 
     def update(
         self: Self, 

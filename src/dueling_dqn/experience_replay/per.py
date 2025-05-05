@@ -103,7 +103,6 @@ class BasicBuffer(BufferBase):
     def add(
         self: Self, 
         transition: Tuple, 
-        error: float
     ) -> None: 
         self[self.pointer] = transition
         
@@ -144,12 +143,11 @@ class ProportionalReplayBuffer(BufferBase):
         super().__init__(*args, **kwargs)
         
         self.tree = SumTree(self.capacity)
-        self.max_val = 100
+        self.max_val = 10
         
     def add(
         self: Self, 
         transition: Tuple, 
-        error: float
     ) -> None: 
         self[self.pointer] = transition
         
@@ -208,14 +206,13 @@ class RankBasedReplayBuffer(BufferBase):
     def add(
         self: Self, 
         transition: Tuple, 
-        error: float 
     ) -> None: 
         self[self.pointer] = transition
         self.ranks[self.pointer] = self.max_val
         
         self.pointer = (self.pointer + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
-        if self.size != self.capacity:
+        if self.size < self.capacity:
             self.priority_sum += (1/self.size)**self.alpha
     
     def update(

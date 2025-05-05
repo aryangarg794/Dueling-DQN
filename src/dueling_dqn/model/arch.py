@@ -14,7 +14,7 @@ class FeatureExtractorAtari(nn.Module):
     
     def __init__(
         self: Self, 
-        in_channels: int = 16,
+        in_channels: int = 4,
         hidden_filters: List = list([32, 64, 64]),
         out_dim: int = 64, 
         *args, 
@@ -38,6 +38,9 @@ class FeatureExtractorAtari(nn.Module):
     def forward(self, x) -> Tensor:
         x = x / 255.0
         return self.layers(x)
+    
+    def __getitem__(self: Self, index: int) -> nn.Module:
+        return self.layers[index]
 
 
 class DuelingArch(nn.Module):
@@ -45,10 +48,9 @@ class DuelingArch(nn.Module):
     def __init__(
         self: Self, 
         env: gym.Env, 
-        hidden_layers_extractor: List = list([128, 512]), 
-        out_dim: int = 64, 
+        hidden_layers_extractor: List = list([128, 512, 64]), 
         start_epsilon: float = 1,
-        max_decay: float = 0.05,
+        max_decay: float = 0.1,
         decay_steps: int = 1000,
         atari: bool = False,
         device: str = 'cpu',
@@ -66,7 +68,7 @@ class DuelingArch(nn.Module):
         self.device = device
         
         if atari: 
-            self.initial_extractor = FeatureExtractorAtari(out_dim=out_dim, *args, *kwargs)
+            self.initial_extractor = FeatureExtractorAtari(out_dim=hidden_layers_extractor[-1], *args, *kwargs)
         else:
             self.initial_extractor = nn.Sequential(
                 nn.Linear(np.prod(self.env.observation_space.shape), 
@@ -74,13 +76,12 @@ class DuelingArch(nn.Module):
                 nn.ReLU()
             )
 
-            hidden_layers_extractor.append(out_dim)
             for i in range(1, len(hidden_layers_extractor)):
                 self.initial_extractor.append(nn.Linear(hidden_layers_extractor[i-1], hidden_layers_extractor[i])) 
                 self.initial_extractor.append(nn.ReLU()) 
         
-        self.value_stream = nn.Linear(out_dim, 1)
-        self.advantage_stream = nn.Linear(out_dim, self.num_actions)
+        self.value_stream = nn.Linear(hidden_layers_extractor[-1], 1)
+        self.advantage_stream = nn.Linear(hidden_layers_extractor[-1], self.num_actions)
     
     def forward(self: Self, obs: Tensor) -> Tensor:
         representation = self.initial_extractor(obs)
@@ -92,7 +93,7 @@ class DuelingArch(nn.Module):
     def epsilon_greedy(self: Self, obs: np.ndarray, dim: int = -1) -> Tensor:
         rng = np.random.random()
         with torch.no_grad():
-            obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
+            obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device).view(1, *obs.shape)
             if rng < self.epsilon:
                 action = self.env.action_space.sample()
                 action = torch.tensor(action)
@@ -118,7 +119,7 @@ class DuelingNetwork:
         gamma: float = 0.99,
         tau: float = 0.005, 
         device: str = 'cpu', 
-        max_norm: float = 10, 
+        max_norm: float = 1, 
         stop_anneal: int = 1000, 
         *args, 
         **kwargs
@@ -196,14 +197,16 @@ class DuelingNetwork:
         nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=self.max_norm)
         self.optimizer.step()
         
-        return (td_targets - q_values).detach(), idxs, loss.item()
+        transitions = (states, actions, rewards, next_states, dones)
+        return self.get_error(transitions), idxs, loss.item()
     
     def get_error(self: Self, transition: Tuple) -> float:
-        obs, action, reward, next_obs, done = transition 
+        states, actions, rewards, next_states, dones = transition 
         with torch.no_grad():
-            q_values = self.net(torch.as_tensor(obs, dtype=torch.float32, device=self.device).view(1, *obs.shape)).squeeze()[action]
-            q_values_next = self.target_net(torch.as_tensor(next_obs, dtype=torch.float32, device=self.device).view(1, *obs.shape)).amax()
-        return (reward + self.gamma * q_values_next * (1-done) - q_values).detach().cpu().numpy()
+            q_values = self.net(states).gather(dim=-1, index=actions)
+            action_next = self.net(next_states).max(dim=-1, keepdim=True)[1]
+            q_values_next = self.target_net(next_states).gather(dim=-1, index=action_next)
+            return (rewards + self.gamma * q_values_next * (1-dones) - q_values).detach()
     
     def soft_update(self: Self) -> None:
         with torch.no_grad():
